@@ -1,0 +1,1400 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>분리수거 AI</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body, #root { height: 100%; }
+  body { font-family: 'Noto Sans KR', sans-serif; }
+
+  @keyframes spin    { to { transform: rotate(360deg); } }
+  @keyframes scanMove{ 0%{top:-42%} 100%{top:100%} }
+  @keyframes fadeIn  { from{opacity:0} to{opacity:1} }
+  @keyframes fadeUp  { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:.3} }
+  @keyframes blink   { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  .tw-cursor {
+    display: inline-block; width: 2px; height: 1.1em;
+    background: currentColor; margin-left: 1px;
+    vertical-align: text-bottom;
+    animation: blink 1s step-end infinite;
+  }
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-thumb { background: rgba(128,128,128,.2); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+const __TWEAKS_STYLE = `
+  .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
+    max-height:calc(100vh - 32px);display:flex;flex-direction:column;
+    transform:scale(var(--dc-inv-zoom,1));transform-origin:bottom right;
+    background:rgba(250,249,247,.78);color:#29261b;
+    -webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);
+    border:.5px solid rgba(255,255,255,.6);border-radius:14px;
+    box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 12px 40px rgba(0,0,0,.18);
+    font:11.5px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;overflow:hidden}
+  .twk-hd{display:flex;align-items:center;justify-content:space-between;
+    padding:10px 8px 10px 14px;cursor:move;user-select:none}
+  .twk-hd b{font-size:12px;font-weight:600;letter-spacing:.01em}
+  .twk-x{appearance:none;border:0;background:transparent;color:rgba(41,38,27,.55);
+    width:22px;height:22px;border-radius:6px;cursor:default;font-size:13px;line-height:1}
+  .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
+  .twk-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px;
+    overflow-y:auto;overflow-x:hidden;min-height:0;
+    scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.15) transparent}
+  .twk-body::-webkit-scrollbar{width:8px}
+  .twk-body::-webkit-scrollbar-track{background:transparent;margin:2px}
+  .twk-body::-webkit-scrollbar-thumb{background:rgba(0,0,0,.15);border-radius:4px;
+    border:2px solid transparent;background-clip:content-box}
+  .twk-body::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.25);
+    border:2px solid transparent;background-clip:content-box}
+  .twk-row{display:flex;flex-direction:column;gap:5px}
+  .twk-row-h{flex-direction:row;align-items:center;justify-content:space-between;gap:10px}
+  .twk-lbl{display:flex;justify-content:space-between;align-items:baseline;
+    color:rgba(41,38,27,.72)}
+  .twk-lbl>span:first-child{font-weight:500}
+  .twk-val{color:rgba(41,38,27,.5);font-variant-numeric:tabular-nums}
+
+  .twk-sect{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:rgba(41,38,27,.45);padding:10px 0 0}
+  .twk-sect:first-child{padding-top:0}
+
+  .twk-field{appearance:none;box-sizing:border-box;width:100%;min-width:0;height:26px;padding:0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;
+    background:rgba(255,255,255,.6);color:inherit;font:inherit;outline:none}
+  .twk-field:focus{border-color:rgba(0,0,0,.25);background:rgba(255,255,255,.85)}
+  select.twk-field{padding-right:22px;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.5)' d='M0 0h10L5 6z'/></svg>");
+    background-repeat:no-repeat;background-position:right 8px center}
+
+  .twk-slider{appearance:none;-webkit-appearance:none;width:100%;height:4px;margin:6px 0;
+    border-radius:999px;background:rgba(0,0,0,.12);outline:none}
+  .twk-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:14px;height:14px;border-radius:50%;background:#fff;
+    border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+  .twk-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+    background:#fff;border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+
+  .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
+    background:rgba(0,0,0,.06);user-select:none}
+  .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
+    background:rgba(255,255,255,.9);box-shadow:0 1px 2px rgba(0,0,0,.12);
+    transition:left .15s cubic-bezier(.3,.7,.4,1),width .15s}
+  .twk-seg.dragging .twk-seg-thumb{transition:none}
+  .twk-seg button{appearance:none;position:relative;z-index:1;flex:1;border:0;
+    background:transparent;color:inherit;font:inherit;font-weight:500;min-height:22px;
+    border-radius:6px;cursor:default;padding:4px 6px;line-height:1.2;
+    overflow-wrap:anywhere}
+
+  .twk-toggle{position:relative;width:32px;height:18px;border:0;border-radius:999px;
+    background:rgba(0,0,0,.15);transition:background .15s;cursor:default;padding:0}
+  .twk-toggle[data-on="1"]{background:#34c759}
+  .twk-toggle i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+  .twk-toggle[data-on="1"] i{transform:translateX(14px)}
+
+  .twk-num{display:flex;align-items:center;box-sizing:border-box;min-width:0;height:26px;padding:0 0 0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;background:rgba(255,255,255,.6)}
+  .twk-num-lbl{font-weight:500;color:rgba(41,38,27,.6);cursor:ew-resize;
+    user-select:none;padding-right:8px}
+  .twk-num input{flex:1;min-width:0;height:100%;border:0;background:transparent;
+    font:inherit;font-variant-numeric:tabular-nums;text-align:right;padding:0 8px 0 0;
+    outline:none;color:inherit;-moz-appearance:textfield}
+  .twk-num input::-webkit-inner-spin-button,.twk-num input::-webkit-outer-spin-button{
+    -webkit-appearance:none;margin:0}
+  .twk-num-unit{padding-right:8px;color:rgba(41,38,27,.45)}
+
+  .twk-btn{appearance:none;height:26px;padding:0 12px;border:0;border-radius:7px;
+    background:rgba(0,0,0,.78);color:#fff;font:inherit;font-weight:500;cursor:default}
+  .twk-btn:hover{background:rgba(0,0,0,.88)}
+  .twk-btn.secondary{background:rgba(0,0,0,.06);color:inherit}
+  .twk-btn.secondary:hover{background:rgba(0,0,0,.1)}
+
+  .twk-swatch{appearance:none;-webkit-appearance:none;width:56px;height:22px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:6px;padding:0;cursor:default;
+    background:transparent;flex-shrink:0}
+  .twk-swatch::-webkit-color-swatch-wrapper{padding:0}
+  .twk-swatch::-webkit-color-swatch{border:0;border-radius:5.5px}
+  .twk-swatch::-moz-color-swatch{border:0;border-radius:5.5px}
+
+  .twk-chips{display:flex;gap:6px}
+  .twk-chip{position:relative;appearance:none;flex:1;min-width:0;height:46px;
+    padding:0;border:0;border-radius:6px;overflow:hidden;cursor:default;
+    box-shadow:0 0 0 .5px rgba(0,0,0,.12),0 1px 2px rgba(0,0,0,.06);
+    transition:transform .12s cubic-bezier(.3,.7,.4,1),box-shadow .12s}
+  .twk-chip:hover{transform:translateY(-1px);
+    box-shadow:0 0 0 .5px rgba(0,0,0,.18),0 4px 10px rgba(0,0,0,.12)}
+  .twk-chip[data-on="1"]{box-shadow:0 0 0 1.5px rgba(0,0,0,.85),
+    0 2px 6px rgba(0,0,0,.15)}
+  .twk-chip>span{position:absolute;top:0;bottom:0;right:0;width:34%;
+    display:flex;flex-direction:column;box-shadow:-1px 0 0 rgba(0,0,0,.1)}
+  .twk-chip>span>i{flex:1;box-shadow:0 -1px 0 rgba(0,0,0,.1)}
+  .twk-chip>span>i:first-child{box-shadow:none}
+  .twk-chip svg{position:absolute;top:6px;left:6px;width:13px;height:13px;
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
+`;
+
+// ── useTweaks ───────────────────────────────────────────────────────────────
+// Single source of truth for tweak values. setTweak persists via the host
+// (__edit_mode_set_keys → host rewrites the EDITMODE block on disk).
+function useTweaks(defaults) {
+  const [values, setValues] = React.useState(defaults);
+  // Accepts either setTweak('key', value) or setTweak({ key: value, ... }) so a
+  // useState-style call doesn't write a "[object Object]" key into the persisted
+  // JSON block.
+  const setTweak = React.useCallback((keyOrEdits, val) => {
+    const edits = typeof keyOrEdits === 'object' && keyOrEdits !== null
+      ? keyOrEdits : { [keyOrEdits]: val };
+    setValues((prev) => ({ ...prev, ...edits }));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits }, '*');
+    // Same-window signal so in-page listeners (deck-stage rail thumbnails)
+    // can react — the parent message only reaches the host, not peers.
+    window.dispatchEvent(new CustomEvent('tweakchange', { detail: edits }));
+  }, []);
+  return [values, setTweak];
+}
+
+// ── TweaksPanel ─────────────────────────────────────────────────────────────
+// Floating shell. Registers the protocol listener BEFORE announcing
+// availability — if the announce ran first, the host's activate could land
+// before our handler exists and the toolbar toggle would silently no-op.
+// The close button posts __edit_mode_dismissed so the host's toolbar toggle
+// flips off in lockstep; the host echoes __deactivate_edit_mode back which
+// is what actually hides the panel.
+function TweaksPanel({ title = 'Tweaks', children }) {
+  const [open, setOpen] = React.useState(false);
+  const dragRef = React.useRef(null);
+  const offsetRef = React.useRef({ x: 16, y: 16 });
+  const PAD = 16;
+
+  const clampToViewport = React.useCallback(() => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const w = panel.offsetWidth, h = panel.offsetHeight;
+    const maxRight = Math.max(PAD, window.innerWidth - w - PAD);
+    const maxBottom = Math.max(PAD, window.innerHeight - h - PAD);
+    offsetRef.current = {
+      x: Math.min(maxRight, Math.max(PAD, offsetRef.current.x)),
+      y: Math.min(maxBottom, Math.max(PAD, offsetRef.current.y)),
+    };
+    panel.style.right = offsetRef.current.x + 'px';
+    panel.style.bottom = offsetRef.current.y + 'px';
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    clampToViewport();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', clampToViewport);
+      return () => window.removeEventListener('resize', clampToViewport);
+    }
+    const ro = new ResizeObserver(clampToViewport);
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, [open, clampToViewport]);
+
+  React.useEffect(() => {
+    const onMsg = (e) => {
+      const t = e?.data?.type;
+      if (t === '__activate_edit_mode') setOpen(true);
+      else if (t === '__deactivate_edit_mode') setOpen(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const dismiss = () => {
+    setOpen(false);
+    window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
+  };
+
+  const onDragStart = (e) => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const r = panel.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY;
+    const startRight = window.innerWidth - r.right;
+    const startBottom = window.innerHeight - r.bottom;
+    const move = (ev) => {
+      offsetRef.current = {
+        x: startRight - (ev.clientX - sx),
+        y: startBottom - (ev.clientY - sy),
+      };
+      clampToViewport();
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  if (!open) return null;
+  return (
+    <>
+      <style>{__TWEAKS_STYLE}</style>
+      <div ref={dragRef} className="twk-panel" data-omelette-chrome=""
+           style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
+        <div className="twk-hd" onMouseDown={onDragStart}>
+          <b>{title}</b>
+          <button className="twk-x" aria-label="Close tweaks"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={dismiss}>✕</button>
+        </div>
+        <div className="twk-body">
+          {children}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Layout helpers ──────────────────────────────────────────────────────────
+
+function TweakSection({ label, children }) {
+  return (
+    <>
+      <div className="twk-sect">{label}</div>
+      {children}
+    </>
+  );
+}
+
+function TweakRow({ label, value, children, inline = false }) {
+  return (
+    <div className={inline ? 'twk-row twk-row-h' : 'twk-row'}>
+      <div className="twk-lbl">
+        <span>{label}</span>
+        {value != null && <span className="twk-val">{value}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ── Controls ────────────────────────────────────────────────────────────────
+
+function TweakSlider({ label, value, min = 0, max = 100, step = 1, unit = '', onChange }) {
+  return (
+    <TweakRow label={label} value={`${value}${unit}`}>
+      <input type="range" className="twk-slider" min={min} max={max} step={step}
+             value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    </TweakRow>
+  );
+}
+
+function TweakToggle({ label, value, onChange }) {
+  return (
+    <div className="twk-row twk-row-h">
+      <div className="twk-lbl"><span>{label}</span></div>
+      <button type="button" className="twk-toggle" data-on={value ? '1' : '0'}
+              role="switch" aria-checked={!!value}
+              onClick={() => onChange(!value)}><i /></button>
+    </div>
+  );
+}
+
+function TweakRadio({ label, value, options, onChange }) {
+  const trackRef = React.useRef(null);
+  const [dragging, setDragging] = React.useState(false);
+  // The active value is read by pointer-move handlers attached for the lifetime
+  // of a drag — ref it so a stale closure doesn't fire onChange for every move.
+  const valueRef = React.useRef(value);
+  valueRef.current = value;
+
+  // Segments wrap mid-word once per-segment width runs out. The track is
+  // ~248px (280 panel − 28 body pad − 4 seg pad), each button loses 12px
+  // to its own padding, and 11.5px system-ui averages ~6.3px/char — so 2
+  // options fit ~16 chars each, 3 fit ~10. Past that (or >3 options), fall
+  // back to a dropdown rather than wrap.
+  const labelLen = (o) => String(typeof o === 'object' ? o.label : o).length;
+  const maxLen = options.reduce((m, o) => Math.max(m, labelLen(o)), 0);
+  const fitsAsSegments = maxLen <= ({ 2: 16, 3: 10 }[options.length] ?? 0);
+  if (!fitsAsSegments) {
+    // <select> emits strings — map back to the original option value so the
+    // fallback stays type-preserving (numbers, booleans) like the segment path.
+    const resolve = (s) => {
+      const m = options.find((o) => String(typeof o === 'object' ? o.value : o) === s);
+      return m === undefined ? s : typeof m === 'object' ? m.value : m;
+    };
+    return <TweakSelect label={label} value={value} options={options}
+                        onChange={(s) => onChange(resolve(s))} />;
+  }
+  const opts = options.map((o) => (typeof o === 'object' ? o : { value: o, label: o }));
+  const idx = Math.max(0, opts.findIndex((o) => o.value === value));
+  const n = opts.length;
+
+  const segAt = (clientX) => {
+    const r = trackRef.current.getBoundingClientRect();
+    const inner = r.width - 4;
+    const i = Math.floor(((clientX - r.left - 2) / inner) * n);
+    return opts[Math.max(0, Math.min(n - 1, i))].value;
+  };
+
+  const onPointerDown = (e) => {
+    setDragging(true);
+    const v0 = segAt(e.clientX);
+    if (v0 !== valueRef.current) onChange(v0);
+    const move = (ev) => {
+      if (!trackRef.current) return;
+      const v = segAt(ev.clientX);
+      if (v !== valueRef.current) onChange(v);
+    };
+    const up = () => {
+      setDragging(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  return (
+    <TweakRow label={label}>
+      <div ref={trackRef} role="radiogroup" onPointerDown={onPointerDown}
+           className={dragging ? 'twk-seg dragging' : 'twk-seg'}>
+        <div className="twk-seg-thumb"
+             style={{ left: `calc(2px + ${idx} * (100% - 4px) / ${n})`,
+                      width: `calc((100% - 4px) / ${n})` }} />
+        {opts.map((o) => (
+          <button key={o.value} type="button" role="radio" aria-checked={o.value === value}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </TweakRow>
+  );
+}
+
+function TweakSelect({ label, value, options, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <select className="twk-field" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => {
+          const v = typeof o === 'object' ? o.value : o;
+          const l = typeof o === 'object' ? o.label : o;
+          return <option key={v} value={v}>{l}</option>;
+        })}
+      </select>
+    </TweakRow>
+  );
+}
+
+function TweakText({ label, value, placeholder, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <input className="twk-field" type="text" value={value} placeholder={placeholder}
+             onChange={(e) => onChange(e.target.value)} />
+    </TweakRow>
+  );
+}
+
+function TweakNumber({ label, value, min, max, step = 1, unit = '', onChange }) {
+  const clamp = (n) => {
+    if (min != null && n < min) return min;
+    if (max != null && n > max) return max;
+    return n;
+  };
+  const startRef = React.useRef({ x: 0, val: 0 });
+  const onScrubStart = (e) => {
+    e.preventDefault();
+    startRef.current = { x: e.clientX, val: value };
+    const decimals = (String(step).split('.')[1] || '').length;
+    const move = (ev) => {
+      const dx = ev.clientX - startRef.current.x;
+      const raw = startRef.current.val + dx * step;
+      const snapped = Math.round(raw / step) * step;
+      onChange(clamp(Number(snapped.toFixed(decimals))));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <div className="twk-num">
+      <span className="twk-num-lbl" onPointerDown={onScrubStart}>{label}</span>
+      <input type="number" value={value} min={min} max={max} step={step}
+             onChange={(e) => onChange(clamp(Number(e.target.value)))} />
+      {unit && <span className="twk-num-unit">{unit}</span>}
+    </div>
+  );
+}
+
+// Relative-luminance contrast pick — checkmarks drawn over a swatch need to
+// read on both #111 and #fafafa without per-option configuration. Hex input
+// only (#rgb / #rrggbb); named or rgb()/hsl() colors fall through to "light".
+function __twkIsLight(hex) {
+  const h = String(hex).replace('#', '');
+  const x = h.length === 3 ? h.replace(/./g, (c) => c + c) : h.padEnd(6, '0');
+  const n = parseInt(x.slice(0, 6), 16);
+  if (Number.isNaN(n)) return true;
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return r * 299 + g * 587 + b * 114 > 148000;
+}
+
+const __TwkCheck = ({ light }) => (
+  <svg viewBox="0 0 14 14" aria-hidden="true">
+    <path d="M3 7.2 5.8 10 11 4.2" fill="none" strokeWidth="2.2"
+          strokeLinecap="round" strokeLinejoin="round"
+          stroke={light ? 'rgba(0,0,0,.78)' : '#fff'} />
+  </svg>
+);
+
+// TweakColor — curated color/palette picker. Each option is either a single
+// hex string or an array of 1-5 hex strings; the card adapts — a lone color
+// renders solid, a palette renders colors[0] as the hero (left ~2/3) with the
+// rest stacked in a sharp column on the right. onChange emits the
+// option in the shape it was passed (string stays string, array stays array).
+// Without options it falls back to the native color input for back-compat.
+function TweakColor({ label, value, options, onChange }) {
+  if (!options || !options.length) {
+    return (
+      <div className="twk-row twk-row-h">
+        <div className="twk-lbl"><span>{label}</span></div>
+        <input type="color" className="twk-swatch" value={value}
+               onChange={(e) => onChange(e.target.value)} />
+      </div>
+    );
+  }
+  // Native <input type=color> emits lowercase hex per the HTML spec, so
+  // compare case-insensitively. String() guards JSON.stringify(undefined),
+  // which returns the primitive undefined (no .toLowerCase).
+  const key = (o) => String(JSON.stringify(o)).toLowerCase();
+  const cur = key(value);
+  return (
+    <TweakRow label={label}>
+      <div className="twk-chips" role="radiogroup">
+        {options.map((o, i) => {
+          const colors = Array.isArray(o) ? o : [o];
+          const [hero, ...rest] = colors;
+          const sup = rest.slice(0, 4);
+          const on = key(o) === cur;
+          return (
+            <button key={i} type="button" className="twk-chip" role="radio"
+                    aria-checked={on} data-on={on ? '1' : '0'}
+                    aria-label={colors.join(', ')} title={colors.join(' · ')}
+                    style={{ background: hero }}
+                    onClick={() => onChange(o)}>
+              {sup.length > 0 && (
+                <span>
+                  {sup.map((c, j) => <i key={j} style={{ background: c }} />)}
+                </span>
+              )}
+              {on && <__TwkCheck light={__twkIsLight(hero)} />}
+            </button>
+          );
+        })}
+      </div>
+    </TweakRow>
+  );
+}
+
+function TweakButton({ label, onClick, secondary = false }) {
+  return (
+    <button type="button" className={secondary ? 'twk-btn secondary' : 'twk-btn'}
+            onClick={onClick}>{label}</button>
+  );
+}
+
+Object.assign(window, {
+  useTweaks, TweaksPanel, TweakSection, TweakRow,
+  TweakSlider, TweakToggle, TweakRadio, TweakSelect,
+  TweakText, TweakNumber, TweakColor, TweakButton,
+});
+
+</script>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ── Recycling Dictionary (AI Hub 모델 출력 기반) ─────────────────────── */
+const DISPOSAL_GUIDE = {
+  0: {
+    category: '종이', badge: '재활용 가능', confidence: 94,
+    instruction: '신문지, 종이박스, 전단지, 책자, 노트 등 종이류입니다. 테이프·스티커를 제거하고 깨끗한 상태로 종이류 수거함에 배출하세요.',
+    steps: ['테이프·스티커 등 이물질을 제거해주세요.', '물기에 젖지 않게 묶거나 상자에 담아주세요.', '종이류 전용 수거함에 배출하세요.'],
+    note: '비닐 코팅 종이·영수증(감열지)은 일반쓰레기 배출. 사용한 휴지·기저귀·물티슈도 일반쓰레기입니다.'
+  },
+  1: {
+    category: '종이팩', badge: '재활용 가능', confidence: 96,
+    instruction: '우유팩, 두유팩, 주스팩 등 종이팩류입니다. 내용물을 비우고 헹궈 압착·건조 후 종이팩 전용 수거함에 배출하세요.',
+    steps: ['내용물을 완전히 비워주세요.', '물로 깨끗이 헹궈주세요.', '압착하여 말려주세요.', '종이팩 전용 수거함에 배출하세요.'],
+    note: '일반 종이류와 혼합 배출 금지. 이물질 제거가 불가능하면 일반쓰레기로 배출하세요.'
+  },
+  2: {
+    category: '종이컵', badge: '재활용 가능', confidence: 93,
+    instruction: '일회용 종이컵입니다. 내용물을 비우고 헹궈 건조한 후 종이컵 전용 수거함에 배출하세요.',
+    steps: ['내용물을 비워주세요.', '물로 헹구어 주세요.', '말려주세요.', '종이컵 전용 수거함에 배출하세요.'],
+    note: '일반 종이류와 혼합 배출 금지. 양면 코팅 종이컵 또는 세척 불가능한 경우 일반쓰레기로 배출하세요.'
+  },
+  3: {
+    category: '캔', badge: '재활용 가능', confidence: 97,
+    instruction: '음료캔, 맥주캔, 참치캔, 분유캔 등 캔류입니다. 내용물을 비우고 헹군 뒤 찌그러뜨려 캔류 수거함에 배출하세요.',
+    steps: ['내용물을 완전히 비워주세요.', '물로 깨끗이 헹궈주세요.', '찌그러뜨려 부피를 줄여주세요.', '캔류 수거함에 배출하세요.'],
+    note: '부탄가스·살충제 캔은 가스 완전 제거 후 구멍 뚫어 배출. 플라스틱 뚜껑은 분리하여 플라스틱류로 배출. 락카·페인트 캔은 일반쓰레기.'
+  },
+  4: {
+    category: '재사용유리 (공병)', badge: '재활용 + 보증금', confidence: 95,
+    instruction: '소주병, 맥주병 등 보증금 환불 대상 공병입니다. 슈퍼·마트 반납 시 보증금을 돌려받을 수 있어요.',
+    steps: ['내용물을 비우고 물로 헹궈주세요.', '철제 뚜껑은 분리하여 캔류 수거함에 배출하세요.', '슈퍼·마트 반납 또는 유리병 전용 수거함에 배출하세요.'],
+    note: '소주병·맥주병 슈퍼 반납 시 보증금 환불 가능. 깨진 유리병은 신문지에 싸서 종량제봉투에 배출하세요.'
+  },
+  5: {
+    category: '유리', badge: '재활용 가능', confidence: 92,
+    instruction: '와인병, 양주병, 잼병, 주스 유리병 등 유리류입니다. 뚜껑을 재질별로 분리하고 유리병 전용 수거함에 배출하세요.',
+    steps: ['내용물을 비우고 물로 헹궈주세요.', '뚜껑을 재질별로 분리하세요. (철제→캔류 / 플라스틱→플라스틱류 / 코르크→일반쓰레기)', '유리병 전용 수거함에 배출하세요.'],
+    note: '색상 구분 없이 배출 가능. 깨진 유리·도자기·거울·내열유리·판유리는 종량제봉투에 배출하세요.'
+  },
+  6: {
+    category: '페트 (PET)', badge: '재활용 가능', confidence: 96,
+    instruction: '생수병, 음료 페트병 등 페트(PET) 용기류입니다. 라벨을 반드시 제거한 후 찌그러뜨려 전용 수거함에 배출하세요.',
+    steps: ['내용물을 비우고 물로 헹궈주세요.', '라벨을 떼어 비닐류로 따로 배출하세요.', '찌그러뜨린 후 뚜껑을 닫아주세요.', '무색 페트 → 페트 전용 수거함 / 유색 페트 → 플라스틱류 수거함에 배출하세요.'],
+    note: '라벨 제거는 필수입니다. 내용물이 남은 병은 배출 불가.'
+  },
+  7: {
+    category: '플라스틱', badge: '재활용 가능', confidence: 89,
+    instruction: '샴푸통, 세제통, 플라스틱 용기 등 플라스틱류입니다. 내용물을 비우고 헹궈 플라스틱류 수거함에 배출하세요.',
+    steps: ['내용물을 완전히 비워주세요.', '물로 깨끗이 헹궈주세요.', '라벨·부속품 등 다른 재질 부분을 분리하세요.', '플라스틱류 수거함에 배출하세요.'],
+    note: '재활용 마크 확인 필수. 고무·실리콘 재질, 혼합재질(칫솔 등), 이물질 제거 불가 시 일반쓰레기입니다.'
+  },
+  8: {
+    category: '비닐', badge: '재활용 가능', confidence: 85,
+    instruction: '과자봉지, 라면봉지, 비닐봉투, 택배봉투, 뽁뽁이 등 비닐류입니다. 이물질을 제거하고 모아서 비닐류 전용 수거함에 배출하세요.',
+    steps: ['내용물을 완전히 비워주세요.', '이물질을 제거해주세요.', '투명 비닐봉투에 모아서 비닐류 전용 수거함에 배출하세요.'],
+    note: '플라스틱류와 혼합 배출 금지. 랩·식탁보·고무장갑·은박 비닐은 일반쓰레기입니다.'
+  },
+  9: {
+    category: '종이 (이물질 오염)', badge: '조건부 재활용', confidence: 71,
+    instruction: '음식물·기름이 묻은 종이류입니다. 이물질 제거 가능 여부에 따라 배출 방법이 달라집니다.',
+    steps: ['이물질 제거가 가능한지 확인하세요.', '제거 가능 → 이물질 제거 후 종이류 수거함에 배출하세요.', '제거 불가 → 일반쓰레기(종량제봉투)로 배출하세요.'],
+    note: '피자박스 등 기름이 심하게 묻은 경우 재활용 불가 → 일반쓰레기 배출.'
+  },
+  10: {
+    category: '종이컵 (이물질 오염)', badge: '조건부 재활용', confidence: 69,
+    instruction: '음식물이나 립스틱 등이 묻은 종이컵입니다. 세척 가능 여부에 따라 배출 방법이 달라집니다.',
+    steps: ['세척 가능 여부를 확인하세요.', '세척 가능 → 헹궈서 종이컵 전용 수거함에 배출하세요.', '세척 불가 → 일반쓰레기로 배출하세요.'],
+    note: '이물질이 남아있으면 재활용 과정에서 오염을 유발합니다. 세척 불가 시 반드시 일반쓰레기.'
+  },
+  11: {
+    category: '캔 (이물질 오염)', badge: '조건부 재활용', confidence: 79,
+    instruction: '음식물·기름이 묻은 캔류입니다. 내용물과 이물질을 최대한 제거한 후 배출하세요.',
+    steps: ['내용물과 이물질을 최대한 제거하세요.', '물로 깨끗이 헹궈주세요.', '세척 가능 → 찌그러뜨려 캔류 수거함에 배출 / 세척 불가 → 일반쓰레기로 배출하세요.'],
+    note: '기름이 심하게 묻은 경우 세척이 필수입니다.'
+  },
+  12: {
+    category: '유리 (이물질 오염)', badge: '조건부 재활용', confidence: 73,
+    instruction: '음식물·기름이 묻은 유리병입니다. 이물질을 제거하고 세척한 후 배출하세요.',
+    steps: ['이물질을 제거하고 물로 헹궈주세요.', '뚜껑을 분리하여 재질별 수거함에 배출하세요.', '세척 가능 → 유리 수거함에 배출 / 세척 불가 → 일반쓰레기로 배출하세요.'],
+    note: '이물질이 남아있으면 재활용이 불가합니다. 세척 불가 시 일반쓰레기.'
+  },
+  13: {
+    category: '페트 (이물질 + 다중포장재)', badge: '조건부 재활용', confidence: 66,
+    instruction: '라벨과 이물질이 모두 있는 페트병입니다. 라벨 제거 후 세척하여 각각 배출하세요.',
+    steps: ['라벨(비닐)을 제거하여 비닐류로 따로 배출하세요.', '이물질을 제거하고 물로 헹궈주세요.', '찌그러뜨린 후 뚜껑을 닫으세요.', '세척 가능 → 페트 수거함 / 세척 불가 → 일반쓰레기로 배출하세요.'],
+    note: '라벨 제거 필수. 이물질·다중포장재 모두 처리 후 배출해야 합니다.'
+  },
+  14: {
+    category: '페트 (이물질 오염)', badge: '조건부 재활용', confidence: 72,
+    instruction: '음식물·기름이 묻은 페트병입니다. 라벨 제거 후 세척하여 배출하세요.',
+    steps: ['라벨을 제거하세요.', '이물질을 제거하고 물로 헹궈주세요.', '찌그러뜨린 후 뚜껑을 닫으세요.', '세척 가능 → 페트 수거함 / 세척 불가 → 일반쓰레기로 배출하세요.'],
+    note: '이물질 제거 후에도 냄새가 심한 경우 일반쓰레기로 배출하세요.'
+  },
+  15: {
+    category: '플라스틱 (이물질 오염)', badge: '조건부 재활용', confidence: 70,
+    instruction: '음식물·기름이 묻은 플라스틱 용기입니다. 세척 가능 여부에 따라 배출 방법이 달라집니다.',
+    steps: ['이물질을 제거하고 물로 헹궈주세요.', '라벨을 제거하세요.', '세척 가능 → 플라스틱 수거함에 배출 / 세척 불가 → 일반쓰레기로 배출하세요.'],
+    note: '기름·음식물이 심하게 묻은 경우 세척이 필수입니다.'
+  },
+  16: {
+    category: '비닐 (이물질 오염)', badge: '조건부 재활용', confidence: 67,
+    instruction: '음식물·기름이 묻은 비닐류입니다. 세척 가능 여부에 따라 배출 방법이 달라집니다.',
+    steps: ['세척 가능 여부를 확인하세요.', '세척 가능 → 깨끗이 씻어 비닐류 수거함에 배출하세요.', '세척 불가 → 일반쓰레기(종량제봉투)로 배출하세요.'],
+    note: '기름·음식물이 묻은 비닐은 세척 후 배출 가능합니다. 세척 불가 시 반드시 일반쓰레기.'
+  },
+  17: {
+    category: '재사용유리 (다중포장재)', badge: '재활용 가능', confidence: 87,
+    instruction: '라벨이나 스티커가 붙은 소주병·맥주병입니다. 부착물을 제거한 후 반납하거나 수거함에 배출하세요.',
+    steps: ['라벨·스티커 등 부착물을 제거해주세요.', '내용물을 비우고 헹궈주세요.', '철제 뚜껑은 분리하여 캔류 수거함에 배출하세요.', '슈퍼·마트 반납 또는 유리 수거함에 배출하세요.'],
+    note: '다중포장재(라벨 등) 반드시 제거 후 배출. 깨진 유리는 신문지에 싸서 종량제봉투에 배출.'
+  },
+  18: {
+    category: '유리 (다중포장재)', badge: '재활용 가능', confidence: 86,
+    instruction: '라벨이나 스티커가 붙은 유리병입니다. 부착물을 제거한 후 유리 수거함에 배출하세요.',
+    steps: ['라벨·스티커를 제거해주세요.', '내용물을 비우고 헹궈주세요.', '뚜껑을 재질별로 분리하여 배출하세요.', '유리 수거함에 배출하세요.'],
+    note: '다중포장재 제거 후 배출 필수. 깨진 유리는 신문지에 싸서 종량제봉투에 배출.'
+  },
+  19: {
+    category: '페트 (다중포장재)', badge: '재활용 가능', confidence: 88,
+    instruction: '라벨이 붙은 페트병입니다. 라벨(비닐)을 반드시 분리하여 각각 배출하세요.',
+    steps: ['라벨(비닐)을 떼어 비닐류로 따로 배출하세요.', '외부 포장재를 분리하세요.', '내용물을 비우고 헹궈주세요.', '찌그러뜨린 후 뚜껑을 닫아 페트 수거함에 배출하세요.'],
+    note: '라벨 등 다중포장재 반드시 제거 후 배출. 라벨 미제거 시 배출 불가.'
+  },
+  20: {
+    category: '스티로폼', badge: '재활용 가능', confidence: 91,
+    instruction: '택배·가전제품 완충용 스티로폼, 흰색 스티로폼박스 등입니다. 부착물을 제거하고 전용 수거함에 배출하세요.',
+    steps: ['테이프·스티커·운송장 등 부착물을 제거하세요.', '음식물·이물질을 제거하세요.', '부피가 크면 적당히 잘라주세요.', '스티로폼 전용 수거함에 배출하세요.'],
+    note: '흰색(무색) 스티로폼만 재활용 가능. 유색 스티로폼·은박 코팅·아이소핑크·과일망은 종량제봉투에 배출.'
+  },
+  21: {
+    category: '스티로폼 (이물질 오염)', badge: '조건부 재활용', confidence: 66,
+    instruction: '음식물·기름이 묻은 스티로폼입니다. 세척 가능 여부에 따라 배출 방법이 달라집니다.',
+    steps: ['이물질 제거 가능 여부를 확인하세요.', '제거 가능 → 제거 후 스티로폼 전용 수거함에 배출하세요.', '제거 불가 → 일반쓰레기(종량제봉투)로 배출하세요.'],
+    note: '흰색(무색) 상태로 만들 수 없으면 재활용 불가. 세척 후에도 색이 남은 경우 종량제봉투.'
+  },
+  22: {
+    category: '건전지', badge: '전용 수거함 배출', confidence: 98,
+    instruction: 'AA/AAA/C/D/9V 등 일반 건전지입니다. 편의점·마트·주민센터 비치 전용 수거함에 배출하세요.',
+    steps: ['방전 여부를 확인하세요.', '건전지 전용 수거함(편의점·마트·주민센터)에 배출하세요.'],
+    note: '리튬배터리·버튼전지·충전지는 별도 전용 수거함에 배출. 일반쓰레기 혼합 배출은 화재·폭발 위험!'
+  }
+};
+
+function detectCategory(text) {
+  const t = text;
+  const hasContam = /이물질|기름|음식물.*묻|오염|더럽|묻어있|잔여물|세척 필요|씻어야/.test(t);
+  const hasMulti  = /라벨|스티커|이중포장|다중포장|포장재.*붙/.test(t);
+
+  if (/건전지|배터리|전지/.test(t)) return 22;
+  if (/스티로폼|스티로 폼|완충재/.test(t)) return hasContam ? 21 : 20;
+  if (/소주병|맥주병|공병/.test(t)) return hasMulti ? 17 : 4;
+  if (/유리/.test(t)) {
+    if (hasContam) return 12;
+    return hasMulti ? 18 : 5;
+  }
+  if (/페트|pet|생수병/.test(t)) {
+    if (hasContam && hasMulti) return 13;
+    if (hasContam) return 14;
+    return hasMulti ? 19 : 6;
+  }
+  if (/플라스틱|샴푸|세제통/.test(t)) return hasContam ? 15 : 7;
+  if (/비닐|봉지|봉투|뽁뽁이/.test(t)) return hasContam ? 16 : 8;
+  if (/캔|알루미늄|음료캔|참치캔|맥주캔/.test(t)) return hasContam ? 11 : 3;
+  if (/종이팩|우유팩|두유팩|주스팩/.test(t)) return 1;
+  if (/종이컵|일회용컵/.test(t)) return hasContam ? 10 : 2;
+  if (/종이|신문|박스|상자|골판지|책|전단/.test(t)) return hasContam ? 9 : 0;
+  if (/병/.test(t)) return 5;
+  if (/용기|포장/.test(t)) return hasContam ? 15 : 7;
+  return 7;
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ── Themes: Black + Gray ─────────────────────────────────────────────── */
+const THEMES = {
+  dark: {
+    id: 'dark',
+    bg: '#080808', surface: '#111111', surfaceAlt: '#181818',
+    border: 'rgba(255,255,255,0.07)', borderFocus: 'rgba(255,255,255,0.22)', borderActive: 'rgba(255,255,255,0.15)',
+    text: '#ededed', textSub: '#868686', textMuted: '#3e3e3e',
+    btnBg: '#f0f0f0', btnText: '#080808',
+    inputBg: '#0c0c0c', scanFill: 'rgba(255,255,255,0.06)',
+    badgeBg: 'rgba(255,255,255,0.05)', badgeText: '#909090',
+    noteBg: 'rgba(255,255,255,0.02)', noteBorder: '#2e2e2e', noteAccent: '#505050',
+    stepBg: 'rgba(255,255,255,0.04)', stepText: '#888888',
+    confBar: '#444444',
+    r: '4px', rLg: '8px', rFull: '99px',
+    mono: "'JetBrains Mono', monospace",
+    shadow: 'none',
+    label: v => v === 'INPUT' ? 'INPUT' : v === 'OUTPUT' ? 'OUTPUT' : v === 'ANALYZE' ? 'RUN ANALYSIS' : v === 'ANALYZING' ? 'ANALYZING...' : v === 'RESET' ? 'RESET' : v === 'AI_LABEL' ? 'AI ANALYSIS' : 'DISPOSAL STEPS'
+  },
+  light: {
+    id: 'light',
+    bg: '#efefef', surface: '#ffffff', surfaceAlt: '#f7f7f7',
+    border: '#e2e2e2', borderFocus: '#555555', borderActive: '#333333',
+    text: '#111111', textSub: '#777777', textMuted: '#c0c0c0',
+    btnBg: '#111111', btnText: '#ffffff',
+    inputBg: '#f9f9f9', scanFill: 'rgba(0,0,0,0.05)',
+    badgeBg: '#f0f0f0', badgeText: '#555555',
+    noteBg: '#f8f8f8', noteBorder: '#d8d8d8', noteAccent: '#999999',
+    stepBg: '#f2f2f2', stepText: '#444444',
+    confBar: '#b0b0b0',
+    r: '10px', rLg: '14px', rFull: '99px',
+    mono: "'Noto Sans KR', sans-serif",
+    shadow: '0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04)',
+    label: v => v === 'INPUT' ? '입력' : v === 'OUTPUT' ? '분석 결과' : v === 'ANALYZE' ? '분석하기' : v === 'ANALYZING' ? '분석 중...' : v === 'RESET' ? '초기화' : v === 'AI_LABEL' ? 'AI 분석 결과' : '배출 방법'
+  },
+  blue: {
+    id: 'light',
+    bg: '#eff4ff', surface: '#ffffff', surfaceAlt: '#f5f8ff',
+    border: '#d8e2ff', borderFocus: '#2563eb', borderActive: '#1d4ed8',
+    text: '#0f172a', textSub: '#4a6fa5', textMuted: '#a8bbdb',
+    btnBg: '#2563eb', btnText: '#ffffff',
+    inputBg: '#f5f8ff', scanFill: 'rgba(37,99,235,0.07)',
+    badgeBg: '#eff4ff', badgeText: '#2563eb',
+    noteBg: '#f5f8ff', noteBorder: '#d8e2ff', noteAccent: '#93b4f5',
+    stepBg: '#eff4ff', stepText: '#2563eb',
+    confBar: '#93b4f5',
+    r: '10px', rLg: '14px', rFull: '99px',
+    mono: "'Noto Sans KR', sans-serif",
+    shadow: '0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04)',
+    label: v => v === 'INPUT' ? '입력' : v === 'OUTPUT' ? '분석 결과' : v === 'ANALYZE' ? '분석하기' : v === 'ANALYZING' ? '분석 중...' : v === 'RESET' ? '초기화' : v === 'AI_LABEL' ? 'AI 분석 결과' : '배출 방법'
+  },
+  green: {
+    id: 'light',
+    bg: '#f0fdf4', surface: '#ffffff', surfaceAlt: '#f5fdf7',
+    border: '#d1fae5', borderFocus: '#16a34a', borderActive: '#15803d',
+    text: '#0a1f12', textSub: '#3d7a52', textMuted: '#8ec4a0',
+    btnBg: '#16a34a', btnText: '#ffffff',
+    inputBg: '#f5fdf7', scanFill: 'rgba(22,163,74,0.07)',
+    badgeBg: '#f0fdf4', badgeText: '#16a34a',
+    noteBg: '#f5fdf7', noteBorder: '#d1fae5', noteAccent: '#7ec99a',
+    stepBg: '#f0fdf4', stepText: '#16a34a',
+    confBar: '#7ec99a',
+    r: '10px', rLg: '14px', rFull: '99px',
+    mono: "'Noto Sans KR', sans-serif",
+    shadow: '0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04)',
+    label: v => v === 'INPUT' ? '입력' : v === 'OUTPUT' ? '분석 결과' : v === 'ANALYZE' ? '분석하기' : v === 'ANALYZING' ? '분석 중...' : v === 'RESET' ? '초기화' : v === 'AI_LABEL' ? 'AI 분석 결과' : '배출 방법'
+  }
+};
+
+/* ── Typewriter hook ──────────────────────────────────────────────────── */
+function useTypewriter(text, speed, active) {
+  const [disp, setDisp] = useState('');
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!active || !text) { setDisp(''); setDone(false); return; }
+    let i = 0; setDisp(''); setDone(false);
+    const id = setInterval(() => {
+      i++; setDisp(text.slice(0, i));
+      if (i >= text.length) { clearInterval(id); setDone(true); }
+    }, speed);
+    return () => clearInterval(id);
+  }, [text, active, speed]);
+  return { disp, done };
+}
+
+/* ── ScanOverlay ──────────────────────────────────────────────────────── */
+function ScanOverlay({ th }) {
+  return (
+    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', background: th.scanFill }}>
+      <div style={{
+        position: 'absolute', left: 0, right: 0, height: '42%',
+        background: `linear-gradient(to bottom, transparent, ${th.scanFill} 50%, transparent)`,
+        animation: 'scanMove 2s ease-in-out infinite'
+      }} />
+      <div style={{
+        position: 'absolute', left: 0, right: 0, height: '1px',
+        background: th.id === 'dark' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+        animation: 'scanMove 2s ease-in-out infinite'
+      }} />
+    </div>
+  );
+}
+
+/* ── ConfBar ──────────────────────────────────────────────────────────── */
+function ConfBar({ value, th }) {
+  const [w, setW] = useState(0);
+  useEffect(() => { const id = setTimeout(() => setW(value), 150); return () => clearTimeout(id); }, [value]);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ flex: 1, height: 2, background: th.border, borderRadius: 99, overflow: 'hidden' }}>
+        <div style={{ width: `${w}%`, height: '100%', background: th.confBar, borderRadius: 99, transition: 'width 1s cubic-bezier(.4,0,.2,1)' }} />
+      </div>
+      <span style={{ fontSize: 11, color: th.textSub, fontFamily: th.mono }}>{value}%</span>
+    </div>
+  );
+}
+
+/* ── API 로딩 스테이지 ─────────────────────────────────────────────────── */
+const API_STAGES = [
+  { label: '서버 연결 중...', sub: 'Connecting to model server' },
+  { label: '이미지 전처리 중...', sub: 'Preprocessing image input' },
+  { label: '모델 추론 중...', sub: 'Running inference on waste classifier' },
+  { label: '결과 정리 중...', sub: 'Parsing disposal guide output' },
+];
+
+function LoadingView({ th }) {
+  const [stage, setStage] = useState(0);
+  const [done, setDone] = useState(false);
+  const dark = th.id === 'dark';
+  useEffect(() => {
+    const timings = [0, 480, 1000, 1480];
+    const ids = timings.map((t, i) => setTimeout(() => {
+      setStage(i);
+      if (i === API_STAGES.length - 1) setTimeout(() => setDone(true), 380);
+    }, t));
+    return () => ids.forEach(clearTimeout);
+  }, []);
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 28, padding: 48 }}>
+      {/* spinner */}
+      <div style={{ position: 'relative', width: 48, height: 48 }}>
+        <div style={{ position: 'absolute', inset: 0, border: `1px solid ${th.border}`, borderRadius: '50%' }} />
+        <div style={{ position: 'absolute', inset: 0, border: '1px solid transparent', borderTopColor: th.textSub, borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+      </div>
+      {/* stage list */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 260 }}>
+        {API_STAGES.map((s, i) => {
+          const active = i === stage && !done;
+          const past   = i < stage || done;
+          return (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              opacity: i <= stage ? 1 : 0.22,
+              transition: 'opacity 0.3s ease'
+            }}>
+              <div style={{
+                flexShrink: 0, width: 16, height: 16, borderRadius: '50%',
+                border: `1px solid ${past ? th.confBar : active ? th.textSub : th.border}`,
+                background: past ? th.confBar : 'transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.3s ease'
+              }}>
+                {past && (
+                  <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+                    <polyline points="2,5 4,7.5 8,3" stroke={dark ? '#111' : '#fff'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                )}
+                {active && <div style={{ width: 5, height: 5, borderRadius: '50%', background: th.textSub, animation: 'pulse 1s ease infinite' }} />}
+              </div>
+              <div>
+                <p style={{ fontSize: 12, color: past || active ? th.text : th.textMuted, fontWeight: active ? 600 : 400, lineHeight: 1 }}>{s.label}</p>
+                {dark && <p style={{ fontSize: 10, color: th.textMuted, fontFamily: th.mono, marginTop: 2 }}>{s.sub}</p>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── ResultPanel ──────────────────────────────────────────────────────── */
+function ResultPanel({ result, th, isAnalyzing }) {
+  const [vis, setVis] = useState([]);
+  const [noteVis, setNoteVis] = useState(false);
+  const { disp, done } = useTypewriter(result?.instruction, 17, !!result && !isAnalyzing);
+
+  useEffect(() => {
+    if (!done || !result) return;
+    setVis([]);
+    result.steps.forEach((_, i) => setTimeout(() => setVis(p => [...p, i]), i * 190 + 200));
+    setTimeout(() => setNoteVis(true), result.steps.length * 190 + 650);
+  }, [done, result]);
+  useEffect(() => { if (!result) { setVis([]); setNoteVis(false); } }, [result]);
+
+  /* Loading */
+  if (isAnalyzing) return <LoadingView th={th} />;
+
+  /* Empty */
+  if (!result) return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 48, opacity: 0.28 }}>
+      <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke={th.textSub} strokeWidth="1.2">
+        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+        <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+        <line x1="12" y1="22.08" x2="12" y2="12"/>
+      </svg>
+      <p style={{ fontSize: 12, color: th.textMuted, textAlign: 'center', lineHeight: 1.9 }}>
+        이미지를 업로드하거나 상태를 입력하고<br />분석 버튼을 눌러주세요
+      </p>
+    </div>
+  );
+
+  /* Result */
+  return (
+    <div style={{ flex: 1, padding: '28px 30px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 22, animation: 'fadeIn 0.35s ease' }}>
+      {/* Header */}
+      <div>
+        <span style={{
+          background: th.badgeBg, color: th.badgeText,
+          fontSize: 10, fontWeight: 600, padding: '3px 10px',
+          borderRadius: th.rFull, fontFamily: th.mono, letterSpacing: '0.07em',
+          display: 'inline-block', marginBottom: 12
+        }}>{result.badge}</span>
+        <h2 style={{ fontSize: 26, fontWeight: 700, color: th.text, letterSpacing: '-0.03em', lineHeight: 1.15, marginBottom: 14 }}>
+          {result.category}
+        </h2>
+        <ConfBar value={result.confidence} th={th} />
+      </div>
+
+      <div style={{ height: 1, background: th.border }} />
+
+      {/* Typewriter instruction */}
+      <div>
+        <p style={{ fontSize: 10, color: th.textMuted, fontFamily: th.mono, letterSpacing: '0.1em', marginBottom: 9 }}>
+          {th.label('AI_LABEL')}
+        </p>
+        <p style={{ fontSize: 14, lineHeight: 1.85, color: th.text }}>
+          {disp}
+          {!done && <span className="tw-cursor" style={{ color: th.textSub }} />}
+        </p>
+      </div>
+
+      {/* Steps */}
+      {done && (
+        <div>
+          <p style={{ fontSize: 10, color: th.textMuted, fontFamily: th.mono, letterSpacing: '0.1em', marginBottom: 14 }}>
+            {th.label('STEPS')}
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {result.steps.map((step, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'flex-start', gap: 11,
+                opacity: vis.includes(i) ? 1 : 0,
+                transform: vis.includes(i) ? 'none' : 'translateY(7px)',
+                transition: 'opacity 0.3s ease, transform 0.3s ease'
+              }}>
+                <div style={{
+                  flexShrink: 0, width: 21, height: 21,
+                  borderRadius: th.id === 'dark' ? '3px' : '50%',
+                  background: th.stepBg, color: th.stepText,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 10, fontWeight: 700, fontFamily: th.mono, marginTop: 2
+                }}>{i + 1}</div>
+                <p style={{ fontSize: 13, lineHeight: 1.7, color: th.text }}>{step}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Note */}
+      {noteVis && result.note && (
+        <div style={{
+          background: th.noteBg, border: `1px solid ${th.noteBorder}`,
+          borderLeft: `2px solid ${th.noteAccent}`,
+          borderRadius: th.r, padding: '12px 14px',
+          animation: 'fadeIn 0.4s ease'
+        }}>
+          <p style={{ fontSize: 12, color: th.textSub, lineHeight: 1.75 }}>
+            <span style={{ color: th.text, fontWeight: 600, marginRight: 5 }}>참고</span>
+            {result.note}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── App ──────────────────────────────────────────────────────────────── */
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "style": "클린 모던"
+}/*EDITMODE-END*/;
+
+function App() {
+  const [tw, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const th = { '다크 테크': THEMES.dark, '클린 모던': THEMES.light, '블루': THEMES.blue, '그린': THEMES.green }[tw.style] || THEMES.dark;
+
+  const [imgSrc, setImgSrc] = useState(null);
+  const [imgFile, setImgFile] = useState(null);
+  const [desc, setDesc] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [apiUrl, setApiUrl] = useState('http://localhost:5000/predict');
+  const [apiMode, setApiMode] = useState('mock'); // 'mock' | 'api' | 'error'
+  const [apiError, setApiError] = useState(null); // 에러 메시지
+
+  const fileRef = useRef(null);
+  const camRef  = useRef(null);
+
+  const loadFile = file => {
+    if (!file || !file.type.startsWith('image/')) return;
+    setImgFile(file); setResult(null);
+    const r = new FileReader();
+    r.onload = e => setImgSrc(e.target.result);
+    r.readAsDataURL(file);
+  };
+
+  const onDrop = useCallback(e => {
+    e.preventDefault(); setDragOver(false);
+    loadFile(e.dataTransfer.files[0]);
+  }, []);
+
+  const testConnection = async () => {
+    if (!apiUrl.trim()) return;
+    setApiError('테스트 중...');
+    try {
+      const res = await fetch(apiUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: '테스트' }),
+        signal: AbortSignal.timeout(4000)
+      });
+      if (res.ok) {
+        setApiMode('api'); setApiError('✓ 연결 성공! 서버가 응답했습니다.');
+      } else {
+        setApiMode('error'); setApiError(`✗ 서버 응답 오류: HTTP ${res.status} ${res.statusText}`);
+      }
+    } catch (e) {
+      setApiMode('error');
+      if (e.name === 'TimeoutError') setApiError('✗ 타임아웃: 서버가 4초 내 응답하지 않았습니다.');
+      else if (e.message.includes('Failed to fetch') || e.message.includes('ERR_CONNECTION_REFUSED'))
+        setApiError('✗ 연결 거부: 서버가 실행 중이지 않거나 URL이 잘못됐습니다.');
+      else if (e.message.includes('CORS'))
+        setApiError('✗ CORS 오류: 서버에 CORS 허용 설정이 필요합니다.\n   Flask: flask_cors 설치 후 CORS(app) 추가');
+      else setApiError(`✗ 오류: ${e.message}`);
+    }
+  };
+
+  const analyze = async () => {
+    if (!imgFile && !desc.trim()) return;
+    setLoading(true); setResult(null); setApiError(null);
+
+    /* ── 실제 API 호출 시도 ────────────────────────────────────── */
+    if (apiUrl.trim()) {
+      try {
+        const res = await fetch(apiUrl.trim(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: desc.trim() }),
+          signal: AbortSignal.timeout(8000)
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+        const data = await res.json();
+        const id  = data.predicted_class ?? data.category_id ?? 7;
+        const conf = data.confidence != null ? Math.round(data.confidence * 100) : null;
+        const entry = { ...DISPOSAL_GUIDE[id] };
+        if (conf !== null) entry.confidence = conf;
+        setApiMode('api'); setApiError('✓ API 응답 수신 완료');
+        setResult(entry);
+        setLoading(false);
+        return;
+      } catch (e) {
+        let msg = '';
+        if (e.name === 'TimeoutError') msg = '✗ 타임아웃: 서버가 8초 내 응답하지 않았습니다.';
+        else if (e.message.includes('Failed to fetch') || e.message.includes('ERR_CONNECTION_REFUSED'))
+          msg = '✗ 연결 거부: Flask 서버가 실행 중인지 확인하세요.\n   → python app.py 또는 uvicorn main:app';
+        else if (e.message.includes('CORS'))
+          msg = '✗ CORS 오류: 서버에 CORS 설정 추가 필요\n   → from flask_cors import CORS; CORS(app)';
+        else msg = `✗ ${e.message}`;
+        setApiMode('error'); setApiError(msg);
+      }
+    }
+
+    /* ── Mock 폴백 ────────────────────────────────────────────── */
+    await sleep(1800 + Math.random() * 500);
+    setApiMode(apiUrl.trim() ? 'error' : 'mock');
+    setResult(DISPOSAL_GUIDE[detectCategory(desc)]);
+    setLoading(false);
+  };
+
+  const reset = () => { setResult(null); setDesc(''); setImgFile(null); setImgSrc(null); };
+  const canRun = (imgFile || desc.trim()) && !loading;
+  const dark = th.id === 'dark';
+
+  return (
+    <div style={{ minHeight: '100vh', background: th.bg, color: th.text, display: 'flex', flexDirection: 'column' }}>
+
+      {/* ── Header ──────────────────────────────────────────────────── */}
+      <header style={{
+        height: 54, padding: '0 28px', flexShrink: 0,
+        borderBottom: `1px solid ${th.border}`,
+        background: th.surface, boxShadow: th.shadow,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: th.r,
+            border: `1px solid ${th.border}`, background: th.surfaceAlt,
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={th.textSub} strokeWidth="1.8">
+              <polyline points="1 4 1 10 7 10"/>
+              <polyline points="23 20 23 14 17 14"/>
+              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+            </svg>
+          </div>
+          <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-0.02em', color: th.text }}>
+            분리수거 AI
+          </span>
+          {dark && (
+            <span style={{
+              fontSize: 9, fontFamily: th.mono, color: th.textMuted,
+              letterSpacing: '0.12em', border: `1px solid ${th.border}`,
+              padding: '1px 5px', borderRadius: '2px'
+            }}>BETA</span>
+          )}
+        </div>
+        <span style={{ fontSize: 11, color: th.textMuted, fontFamily: th.mono, letterSpacing: dark ? '0.07em' : 0 }}>
+          {dark ? 'AI-POWERED RECYCLING GUIDE' : '올바른 분리수거를 도와드립니다'}
+        </span>
+      </header>
+
+      {/* ── Main grid ───────────────────────────────────────────────── */}
+      <div style={{
+        flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr',
+        maxWidth: 1040, width: '100%', margin: '0 auto',
+        padding: '26px 22px', gap: 18, alignContent: 'start'
+      }}>
+
+        {/* LEFT ─ Input column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+          {/* Drag & drop zone */}
+          <div
+            onDrop={onDrop}
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onClick={() => !imgSrc && fileRef.current?.click()}
+            style={{
+              position: 'relative', borderRadius: th.rLg, overflow: 'hidden',
+              border: `1.5px ${imgSrc ? 'solid' : 'dashed'} ${dragOver ? th.borderActive : imgSrc ? th.borderActive : th.border}`,
+              background: dragOver ? (dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)') : th.surface,
+              cursor: imgSrc ? 'default' : 'pointer',
+              transition: 'all 0.2s ease', minHeight: 200,
+              display: 'flex', flexDirection: 'column',
+              boxShadow: th.shadow
+            }}
+          >
+            {imgSrc ? (
+              <>
+                <img src={imgSrc} alt="첨부된 이미지" style={{ width: '100%', height: 220, objectFit: 'cover', display: 'block' }} />
+                {loading && <ScanOverlay th={th} />}
+                <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 6 }}>
+                  <button onClick={e => { e.stopPropagation(); fileRef.current?.click(); }} style={{
+                    background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)',
+                    color: '#d0d0d0', border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '5px', padding: '4px 10px', fontSize: 11,
+                    cursor: 'pointer', fontFamily: 'Noto Sans KR, sans-serif'
+                  }}>변경</button>
+                  <button onClick={e => { e.stopPropagation(); reset(); }} style={{
+                    background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)',
+                    color: '#f87171', border: '1px solid rgba(248,113,113,0.2)',
+                    borderRadius: '5px', padding: '4px 10px', fontSize: 11,
+                    cursor: 'pointer', fontFamily: 'Noto Sans KR, sans-serif'
+                  }}>삭제</button>
+                </div>
+              </>
+            ) : (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: th.rLg,
+                  border: `1px solid ${th.border}`, background: th.surfaceAlt,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={th.textSub} strokeWidth="1.4">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21 15 16 10 5 21"/>
+                  </svg>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: th.text, marginBottom: 4 }}>이미지 드래그 또는 클릭</p>
+                  <p style={{ fontSize: 11, color: th.textSub }}>JPG, PNG, WEBP 형식 지원</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Camera button */}
+          <button onClick={() => camRef.current?.click()} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+            padding: '9px', background: th.surface, border: `1px solid ${th.border}`,
+            borderRadius: th.r, color: th.textSub, fontSize: 12, cursor: 'pointer',
+            transition: 'border-color 0.2s', boxShadow: th.shadow,
+            fontFamily: 'Noto Sans KR, sans-serif'
+          }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            카메라로 직접 촬영
+          </button>
+
+          {/* Hidden inputs */}
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => loadFile(e.target.files[0])} />
+          <input ref={camRef}  type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => loadFile(e.target.files[0])} />
+
+          {/* Divider */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '2px 0' }}>
+            <div style={{ flex: 1, height: 1, background: th.border }} />
+            <span style={{ fontSize: 10, color: th.textMuted, fontFamily: th.mono }}>또는</span>
+            <div style={{ flex: 1, height: 1, background: th.border }} />
+          </div>
+
+          {/* Text input */}
+          <div>
+            <label style={{
+              display: 'block', fontSize: 10, color: th.textSub, marginBottom: 7,
+              fontFamily: th.mono, letterSpacing: dark ? '0.08em' : 0
+            }}>
+              {dark ? 'WASTE CONDITION' : '쓰레기 상태 설명'}
+            </label>
+            <textarea
+              value={desc}
+              onChange={e => setDesc(e.target.value)}
+              placeholder={'예: 음료수 페트병, 라벨이 붙어있고\n내용물이 조금 남아있음'}
+              rows={4}
+              style={{
+                width: '100%', padding: '11px 13px',
+                background: th.inputBg, border: `1px solid ${th.border}`,
+                borderRadius: th.r, color: th.text, fontSize: 13,
+                lineHeight: 1.7, resize: 'none', outline: 'none',
+                fontFamily: 'Noto Sans KR, sans-serif',
+                transition: 'border-color 0.2s', boxShadow: th.shadow
+              }}
+              onFocus={e => e.target.style.borderColor = th.borderFocus}
+              onBlur={e => e.target.style.borderColor = th.border}
+            />
+          </div>
+
+          {/* API 엔드포인트 설정 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <label style={{
+                fontSize: 10, color: th.textSub, fontFamily: th.mono,
+                letterSpacing: dark ? '0.08em' : 0
+              }}>
+                {dark ? 'API ENDPOINT' : 'API 엔드포인트'}
+              </label>
+              <span style={{
+                fontSize: 10, padding: '1px 7px', borderRadius: th.rFull,
+                fontFamily: th.mono,
+                background: apiMode === 'api' ? (dark ? 'rgba(74,222,128,0.1)' : '#f0fdf4') : apiMode === 'error' ? (dark ? 'rgba(248,113,113,0.1)' : '#fef2f2') : th.badgeBg,
+                color: apiMode === 'api' ? '#4ade80' : apiMode === 'error' ? '#f87171' : th.badgeText,
+                border: `1px solid ${apiMode === 'api' ? 'rgba(74,222,128,0.2)' : apiMode === 'error' ? 'rgba(248,113,113,0.2)' : th.border}`
+              }}>
+                {apiMode === 'api' ? '● CONNECTED' : apiMode === 'error' ? '● FALLBACK' : '○ MOCK'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="text"
+                value={apiUrl}
+                onChange={e => { setApiUrl(e.target.value); setApiMode('mock'); setApiError(null); }}
+                placeholder="http://localhost:5000/predict"
+                style={{
+                  flex: 1, padding: '8px 11px',
+                  background: th.inputBg, border: `1px solid ${th.border}`,
+                  borderRadius: th.r, color: th.text, fontSize: 11,
+                  outline: 'none', fontFamily: th.mono,
+                  transition: 'border-color 0.2s'
+                }}
+                onFocus={e => e.target.style.borderColor = th.borderFocus}
+                onBlur={e => e.target.style.borderColor = th.border}
+              />
+              <button onClick={testConnection} style={{
+                flexShrink: 0, padding: '8px 11px',
+                background: th.surfaceAlt, border: `1px solid ${th.border}`,
+                borderRadius: th.r, color: th.textSub, fontSize: 11,
+                cursor: 'pointer', fontFamily: th.mono, whiteSpace: 'nowrap',
+                transition: 'border-color 0.2s'
+              }}>
+                PING
+              </button>
+            </div>
+            {apiError && (
+              <pre style={{
+                fontSize: 10, color: apiMode === 'api' ? '#4ade80' : '#f87171',
+                fontFamily: th.mono, lineHeight: 1.6, margin: 0,
+                background: apiMode === 'api' ? 'rgba(74,222,128,0.05)' : 'rgba(248,113,113,0.05)',
+                border: `1px solid ${apiMode === 'api' ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.15)'}`,
+                borderRadius: th.r, padding: '7px 10px', whiteSpace: 'pre-wrap', wordBreak: 'break-all'
+              }}>{apiError}</pre>
+            )}
+          </div>
+
+          {/* Analyze button */}
+          <button onClick={analyze} disabled={!canRun} style={{
+            width: '100%', padding: '12px 0',
+            background: canRun ? th.btnBg : th.border,
+            color: canRun ? th.btnText : th.textMuted,
+            border: 'none', borderRadius: th.r,
+            fontSize: 12, fontWeight: 700, cursor: canRun ? 'pointer' : 'not-allowed',
+            transition: 'all 0.2s',
+            letterSpacing: dark ? '0.1em' : '0.02em',
+            fontFamily: dark ? th.mono : 'Noto Sans KR, sans-serif',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8
+          }}>
+            {loading ? (
+              <>
+                <div style={{
+                  width: 12, height: 12, borderRadius: '50%',
+                  border: `1.5px solid ${th.btnText}30`,
+                  borderTopColor: th.btnText,
+                  animation: 'spin 0.7s linear infinite'
+                }} />
+                {th.label('ANALYZING')}
+              </>
+            ) : th.label('ANALYZE')}
+          </button>
+        </div>
+
+        {/* RIGHT ─ Result column */}
+        <div style={{
+          background: th.surface, borderRadius: th.rLg,
+          border: `1px solid ${th.border}`,
+          display: 'flex', flexDirection: 'column',
+          overflow: 'hidden', boxShadow: th.shadow, minHeight: 480
+        }}>
+          {/* Result header bar */}
+          <div style={{
+            padding: '13px 20px', borderBottom: `1px solid ${th.border}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            flexShrink: 0
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{
+                width: 6, height: 6, borderRadius: '50%',
+                background: result ? th.text : (loading ? th.textSub : th.textMuted),
+                transition: 'background 0.4s',
+                animation: loading ? 'pulse 1s ease infinite' : 'none'
+              }} />
+              <span style={{ fontSize: 11, color: th.textSub, fontFamily: th.mono, letterSpacing: dark ? '0.08em' : 0 }}>
+                {th.label('OUTPUT')}
+                {result && (
+                  <span style={{
+                    marginLeft: 8, fontSize: 9, padding: '1px 6px', borderRadius: th.rFull,
+                    background: apiMode === 'api' ? 'rgba(74,222,128,0.1)' : th.badgeBg,
+                    color: apiMode === 'api' ? '#4ade80' : th.textMuted,
+                    border: `1px solid ${apiMode === 'api' ? 'rgba(74,222,128,0.2)' : th.border}`,
+                    fontFamily: th.mono
+                  }}>
+                    {apiMode === 'api' ? 'API' : 'MOCK'}
+                  </span>
+                )}
+              </span>
+            </div>
+            {result && (
+              <button onClick={reset} style={{
+                background: 'none', border: `1px solid ${th.border}`,
+                borderRadius: th.r, color: th.textSub,
+                fontSize: 10, padding: '3px 9px', cursor: 'pointer',
+                fontFamily: th.mono, letterSpacing: dark ? '0.06em' : 0
+              }}>
+                {th.label('RESET')}
+              </button>
+            )}
+          </div>
+
+          <ResultPanel result={result} th={th} isAnalyzing={loading} />
+        </div>
+      </div>
+
+      {/* ── Tweaks ──────────────────────────────────────────────────── */}
+      <TweaksPanel>
+        <TweakSection label="디자인 스타일" />
+        <TweakSelect
+          label="스타일"
+          value={tw.style}
+          options={['다크 테크', '클린 모던', '블루', '그린']}
+          onChange={v => setTweak('style', v)}
+        />
+      </TweaksPanel>
+
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
