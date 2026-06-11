@@ -14,6 +14,9 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import numpy as np
 import os
+import base64
+import io
+from PIL import Image
 
 app = Flask(__name__)
 CORS(app)  # 웹 UI에서 fetch 호출 허용 (CORS 설정 필수!)
@@ -23,12 +26,22 @@ print("모델 로딩 중...")
 
 import tf_keras as keras
 from transformers import AutoTokenizer, TFRobertaModel
+import zipfile, json
 
-MODEL_DIR = "./model"  # snapshot_download 로 받은 경로
+MODEL_DIR = "./model"
+
+def load_model_from_weights(keras_path, weights_path, custom_objects=None):
+    with zipfile.ZipFile(keras_path, 'r') as z:
+        config = json.loads(z.read('config.json'))
+    model = keras.models.model_from_json(json.dumps(config), custom_objects=custom_objects)
+    weights = np.load(weights_path, allow_pickle=True)
+    model.set_weights(weights)
+    return model
 
 tokenizer = AutoTokenizer.from_pretrained(os.path.join(MODEL_DIR, "roberta_finetuned"))
-model = keras.models.load_model(
+model = load_model_from_weights(
     os.path.join(MODEL_DIR, "p_best.keras"),
+    os.path.join(MODEL_DIR, "weights.npy"),
     custom_objects={"TFRobertaModel": TFRobertaModel}
 )
 
@@ -77,34 +90,39 @@ def predict():
     """
     data = request.get_json(force=True)
 
-    if not data or "text" not in data:
-        return jsonify({"error": "text 필드가 필요합니다."}), 400
-
-    text = str(data["text"]).strip()
-    if not text:
-        return jsonify({"error": "text가 비어있습니다."}), 400
+    text = str(data.get("text", "")).strip() or "분리수거 항목"
+    image_b64 = data.get("image", None)
 
     try:
+        # 이미지 전처리
+        if image_b64:
+            if "," in image_b64:
+                image_b64 = image_b64.split(",")[1]
+            img_bytes = base64.b64decode(image_b64)
+            img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            img = img.resize((224, 224))
+            img_array = np.array(img, dtype=np.float32)
+        else:
+            img_array = np.zeros((224, 224, 3), dtype=np.float32)
+        img_batch = np.expand_dims(img_array, axis=0)  # (1, 224, 224, 3)
+
         # 토크나이징
         inputs = tokenizer(
             text,
             return_tensors="tf",
             padding="max_length",
             truncation=True,
-            max_length=128
+            max_length=64
         )
 
-        # 모델 추론
-        outputs = model(inputs)
+        # 모델 추론 (이미지 + 텍스트)
+        # model.inputs 순서: image, input_ids, attention_mask
+        outputs = model([img_batch, inputs["input_ids"], inputs["attention_mask"]])
 
-        # logits → softmax → argmax
-        # outputs 구조가 다를 경우 아래를 수정하세요:
-        #   outputs         : Tensor 직접 반환
-        #   outputs.logits  : HuggingFace 스타일
         if hasattr(outputs, "logits"):
             logits = outputs.logits
         else:
-            logits = outputs  # keras model이 Tensor 직접 반환하는 경우
+            logits = outputs
 
         probs = np.array(logits)[0]  # (num_classes,)
         # softmax 수동 계산
